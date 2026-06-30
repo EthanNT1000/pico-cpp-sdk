@@ -15,6 +15,8 @@ SPI::SPI(spi_inst_t* spi, uint32_t baudrate, uint32_t cs, uint32_t sck,
     gpio_set_dir(cs, GPIO_OUT);
     csDeselect();
 
+    _busMutex = xSemaphoreCreateMutex();
+
     setFormat(data16Bits ? 16 : 8, cpol, cpha, order);
     if (enableDma) {
         dmaRxSemaphore = xSemaphoreCreateBinary();
@@ -31,11 +33,15 @@ void SPI::setFormat(uint data_bits, spi_cpol_t cpol, spi_cpha_t cpha, spi_order_
 }
 
 void SPI::csSelect() {
-    gpio_put(_cs, false);   // Active low
+    if (_busMutex)
+        xSemaphoreTake(_busMutex, portMAX_DELAY);
+    gpio_put(_cs, false);
 }
 
 void SPI::csDeselect() {
     gpio_put(_cs, true);
+    if (_busMutex)
+        xSemaphoreGive(_busMutex);
 }
 
 uint16_t SPI::transfer(void* tx, void* rx, uint16_t size, uint32_t timeout_ms) {

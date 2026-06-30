@@ -34,6 +34,7 @@ private:
     dma_channel_config dmaRxConfig;
     bool _data16Bits;
 
+    SemaphoreHandle_t _busMutex;       // serialises csSelect→transfer→csDeselect across tasks
     SemaphoreHandle_t dmaRxSemaphore;
     SemaphoreHandle_t dmaTxSemaphore;
 
