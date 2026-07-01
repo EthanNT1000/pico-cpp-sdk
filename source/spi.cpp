@@ -13,9 +13,9 @@ SPI::SPI(spi_inst_t* spi, uint32_t baudrate, uint32_t cs, uint32_t sck,
     gpio_set_function(miso, GPIO_FUNC_SPI);
 
     gpio_set_dir(cs, GPIO_OUT);
-    csDeselect();
+    gpio_put(_cs, true);  // deselect without going through the public API (mutex not yet created)
 
-    _busMutex = xSemaphoreCreateMutex();
+    _busMutex = xSemaphoreCreateRecursiveMutex();
 
     setFormat(data16Bits ? 16 : 8, cpol, cpha, order);
     if (enableDma) {
@@ -34,14 +34,18 @@ void SPI::setFormat(uint data_bits, spi_cpol_t cpol, spi_cpha_t cpha, spi_order_
 
 void SPI::csSelect() {
     if (_busMutex)
-        xSemaphoreTake(_busMutex, portMAX_DELAY);
+        xSemaphoreTakeRecursive(_busMutex, portMAX_DELAY);
+    configASSERT(!_csActive);  // fires on nested csSelect from the same task
+    _csActive = true;
     gpio_put(_cs, false);
 }
 
 void SPI::csDeselect() {
+    configASSERT(_csActive);   // fires on csDeselect without a matching csSelect
+    _csActive = false;
     gpio_put(_cs, true);
     if (_busMutex)
-        xSemaphoreGive(_busMutex);
+        xSemaphoreGiveRecursive(_busMutex);
 }
 
 uint16_t SPI::transfer(void* tx, void* rx, uint16_t size, uint32_t timeout_ms) {

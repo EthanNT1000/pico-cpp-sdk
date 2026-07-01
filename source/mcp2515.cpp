@@ -119,18 +119,22 @@ void Mcp2515::setFilter(uint8_t filterId, uint32_t canId, bool extended) {
     const uint8_t filterSidh[] = { RXF0SIDH, RXF1SIDH, RXF2SIDH, RXF3SIDH, RXF4SIDH, RXF5SIDH };
     if (filterId >= 6) return;
     uint8_t rxbCtrl = (filterId < 2) ? RXB0CTRL : RXB1CTRL;
+    _spi->lock();
     writeByte(CANCTRL, REQOP_CONFIG);
     writeFilterOrMask(filterSidh[filterId], canId, extended);
     writeByte(CANCTRL, REQOP_NORMAL | CLKOUT_ENABLED);
     writeByte(rxbCtrl, readByte(rxbCtrl) & ~RXM);
+    _spi->unlock();
 }
 
 void Mcp2515::setMask(uint8_t maskId, uint32_t mask, bool extended) {
     const uint8_t maskSidh[] = { RXM0SIDH, RXM1SIDH };
     const uint8_t rxbCtrl[] = { RXB0CTRL, RXB1CTRL };
     if (maskId >= 2) return;
+    _spi->lock();
     writeByte(CANCTRL, REQOP_CONFIG);
     writeFilterOrMask(maskSidh[maskId], mask, extended);
     writeByte(CANCTRL, REQOP_NORMAL | CLKOUT_ENABLED);
     writeByte(rxbCtrl[maskId], readByte(rxbCtrl[maskId]) & ~RXM);
+    _spi->unlock();
 }

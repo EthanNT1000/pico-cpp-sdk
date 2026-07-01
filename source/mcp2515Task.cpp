@@ -12,21 +12,18 @@ Mcp2515Task::Mcp2515Task(SPI* spi, uint32_t intPin, Mcp2515::Oscillator oscillat
 void Mcp2515Task::initialInTask(RxBufferType rxBufferType) {
     _intSemaphore = xSemaphoreCreateBinary();
     _txSemaphore = xSemaphoreCreateBinary();
+    _rxSemaphore = xSemaphoreCreateCounting(2, 0);
 
     resetMcp2515();
     vTaskDelay(pdMS_TO_TICKS(100));
     setMcp2515Bitrate();
     clearInterrupts(0);
 
-    rxMode = rxBufferType;
-    if (rxMode == RxBufferType::Rollover) {
-        _rxSemaphore = xSemaphoreCreateCounting(2, 0);
+    if (rxBufferType == RxBufferType::Rollover) {
         writeByte(RXB0CTRL, RXM_RCV_ALL | BUKT_ROLLOVER);
     } else {
-        _rx0Semaphore = xSemaphoreCreateBinary();
-        _rx1Semaphore = xSemaphoreCreateBinary();
-        writeByte(RXB0CTRL, RXM_VALID_ALL);
-        writeByte(RXB1CTRL, RXM_VALID_ALL);
+        writeByte(RXB0CTRL, RXM_RCV_ALL);
+        writeByte(RXB1CTRL, RXM_RCV_ALL);
     }
 
     gpio_init(_intPin);
@@ -48,8 +45,7 @@ void Mcp2515Task::irqHandler(uint gpio, uint32_t events) {
 // Reads CANINTF on each interrupt, clears flags, and gives the appropriate
 // semaphore so the user task's InTask calls can unblock.
 void Mcp2515Task::run() {
-    while (_intSemaphore == nullptr || _txSemaphore == nullptr ||
-        ((_rx0Semaphore == nullptr || _rx1Semaphore == nullptr) && _rxSemaphore == nullptr)) {
+    while (_intSemaphore == nullptr || _txSemaphore == nullptr || _rxSemaphore == nullptr) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
@@ -73,12 +69,10 @@ void Mcp2515Task::run() {
                 if (intFlag & TX0IF) { bitModify(CANINTF, TX0IF, 0); _pendingTxBuf &= ~0x01; }
 
                 if (intFlag & RX0IF) {
-                    if (rxMode == RxBufferType::Rollover) xSemaphoreGive(_rxSemaphore);
-                    else                                  xSemaphoreGive(_rx0Semaphore);
+                    xSemaphoreGive(_rxSemaphore);
                 }
                 if (intFlag & RX1IF) {
-                    if (rxMode == RxBufferType::Rollover) xSemaphoreGive(_rxSemaphore);
-                    else                                  xSemaphoreGive(_rx1Semaphore);
+                    xSemaphoreGive(_rxSemaphore);
                 }
                 if (intFlag & TX0IF) { xSemaphoreGive(_txSemaphore); }
             }
@@ -94,22 +88,6 @@ void Mcp2515Task::txBuffer0SendInTask(uint32_t canId, uint8_t* buf, uint8_t len)
     }
     _pendingTxBuf |= 0x01;
     txBuffer0Send(canId, buf, len);
-}
-
-void Mcp2515Task::rxBuffer0ReadInTask(uint32_t* canId, uint8_t* buf, uint8_t* len) {
-    if ((_pendingRxBuf & 0x01) == 0) {
-        xSemaphoreTake(_rx0Semaphore, portMAX_DELAY);
-    }
-    _pendingRxBuf &= ~0x01;
-    rxBuffer0Read(canId, buf, len);
-}
-
-void Mcp2515Task::rxBuffer1ReadInTask(uint32_t* canId, uint8_t* buf, uint8_t* len) {
-    if ((_pendingRxBuf & 0x02) == 0) {
-        xSemaphoreTake(_rx1Semaphore, portMAX_DELAY);
-    }
-    _pendingRxBuf &= ~0x02;
-    rxBuffer1Read(canId, buf, len);
 }
 
 void Mcp2515Task::rxReadInTask(uint32_t* canId, uint8_t* buf, uint8_t* len) {

@@ -17,6 +17,8 @@ public:
 
     void csSelect();
     void csDeselect();
+    void lock()   { if (_busMutex) xSemaphoreTake(_busMutex, portMAX_DELAY); }
+    void unlock() { if (_busMutex) xSemaphoreGive(_busMutex); }
     uint16_t transfer(void* tx, void* rx, uint16_t size, uint32_t timeout_ms = portMAX_DELAY);
 
     void* operator new(size_t size)     {return pvPortMalloc(size);}
@@ -35,6 +37,7 @@ private:
     bool _data16Bits;
 
     SemaphoreHandle_t _busMutex;       // serialises csSelect→transfer→csDeselect across tasks
+    bool _csActive { false };         // detects nested csSelect (configASSERT fires in debug)
     SemaphoreHandle_t dmaRxSemaphore;
     SemaphoreHandle_t dmaTxSemaphore;
 
