@@ -1,6 +1,7 @@
 #include "mcp2515Task.h"
 #include "mcp2515reg.h"
 #include "gpio.h"
+#include "pico/time.h"
 
 Mcp2515Task::Mcp2515Task(SPI* spi, uint32_t intPin, Mcp2515::Oscillator oscillator,
                          Mcp2515::Bitrate bitrate, TaskInterface::Priority priority,
@@ -37,6 +38,7 @@ void Mcp2515Task::initialInTask(RxBufferType rxBufferType) {
 
 void Mcp2515Task::irqHandler(uint gpio, uint32_t events) {
     BaseType_t woken = pdFALSE;
+    _lastIntTime = get_absolute_time();
     xSemaphoreGiveFromISR(_intSemaphore, &woken);
     portYIELD_FROM_ISR(woken);
 }
@@ -64,6 +66,9 @@ void Mcp2515Task::run() {
                 _pendingTxBuf &= ~0x01;
                 xSemaphoreGive(_txSemaphore);
             } else {
+                if(intFlag & RX0IF || intFlag & RX1IF)
+                    _lastRxTime = _lastIntTime;  // record timestamp of last received frame
+
                 if (intFlag & RX0IF) { bitModify(CANINTF, RX0IF, 0); _pendingRxBuf |= 0x01; }
                 if (intFlag & RX1IF) { bitModify(CANINTF, RX1IF, 0); _pendingRxBuf |= 0x02; }
                 if (intFlag & TX0IF) { bitModify(CANINTF, TX0IF, 0); _pendingTxBuf &= ~0x01; }
@@ -90,8 +95,9 @@ void Mcp2515Task::txBuffer0SendInTask(uint32_t canId, uint8_t* buf, uint8_t len)
     txBuffer0Send(canId, buf, len);
 }
 
-void Mcp2515Task::rxReadInTask(uint32_t* canId, uint8_t* buf, uint8_t* len) {
+void Mcp2515Task::rxReadInTask(uint32_t* canId, uint8_t* buf, uint8_t* len, uint64_t* timestamp_us) {
     xSemaphoreTake(_rxSemaphore, portMAX_DELAY);
+    *timestamp_us = to_us_since_boot(_lastRxTime);
     if (_pendingRxBuf & 0x01) {
         _pendingRxBuf &= ~0x01;
         rxBuffer0Read(canId, buf, len);
